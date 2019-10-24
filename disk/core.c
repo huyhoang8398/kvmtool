@@ -203,6 +203,9 @@ error:
 
 int disk_image__wait(struct disk_image *disk)
 {
+	if (disk->wwpn)
+		return -ENOTBLK;
+
 	if (disk->ops->wait)
 		return disk->ops->wait(disk);
 
@@ -211,6 +214,9 @@ int disk_image__wait(struct disk_image *disk)
 
 int disk_image__flush(struct disk_image *disk)
 {
+	if (disk->wwpn)
+		return -ENOTBLK;
+
 	if (disk->ops->flush)
 		return disk->ops->flush(disk);
 
@@ -225,10 +231,13 @@ static int disk_image__close(struct disk_image *disk)
 
 	disk_aio_destroy(disk);
 
-	if (disk->ops->close)
+	if (disk->ops && disk->ops->close)
 		return disk->ops->close(disk);
 
-	if (close(disk->fd) < 0)
+	if (disk->wwpn)
+		return 0;
+
+	if (disk->fd >= 0 && close(disk->fd) < 0)
 		pr_warning("close() failed");
 
 	free(disk);
@@ -255,6 +264,9 @@ ssize_t disk_image__read(struct disk_image *disk, u64 sector,
 {
 	ssize_t total = 0;
 
+	if (disk->wwpn)
+		return -ENOTBLK;
+
 	if (debug_iodelay)
 		msleep(debug_iodelay);
 
@@ -280,6 +292,9 @@ ssize_t disk_image__write(struct disk_image *disk, u64 sector,
 			  const struct iovec *iov, int iovcount, void *param)
 {
 	ssize_t total = 0;
+
+	if (disk->wwpn)
+		return -ENOTBLK;
 
 	if (debug_iodelay)
 		msleep(debug_iodelay);
@@ -309,6 +324,9 @@ ssize_t disk_image__get_serial(struct disk_image *disk, void *buffer, ssize_t *l
 	struct stat st;
 	int r;
 
+	if (disk->wwpn)
+		return -ENOTBLK;
+
 	r = fstat(disk->fd, &st);
 	if (r)
 		return r;
@@ -323,6 +341,8 @@ ssize_t disk_image__get_serial(struct disk_image *disk, void *buffer, ssize_t *l
 void disk_image__set_callback(struct disk_image *disk,
 			      void (*disk_req_cb)(void *param, long len))
 {
+	if (disk->wwpn)
+		return;
 	disk->disk_req_cb = disk_req_cb;
 }
 
