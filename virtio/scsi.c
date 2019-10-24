@@ -260,7 +260,7 @@ static int virtio_scsi_init_one(struct kvm *kvm, struct disk_image *disk)
 			.sense_size	= VIRTIO_SCSI_SENSE_SIZE,
 			.cdb_size	= VIRTIO_SCSI_CDB_SIZE,
 			.max_channel	= 0,
-			.max_target	= 0,
+			.max_target	= 255,
 			.max_lun	= 16383,
 			.event_info_size = sizeof(struct virtio_scsi_event),
 		},
