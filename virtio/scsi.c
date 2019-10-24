@@ -24,7 +24,6 @@ struct scsi_dev {
 	struct virt_queue		vqs[NUM_VIRT_QUEUES];
 	struct virtio_scsi_config	config;
 	struct vhost_scsi_target	target;
-	u32				features;
 	int				vhost_fd;
 	struct virtio_device		vdev;
 	struct list_head		list;
@@ -40,19 +39,43 @@ static u8 *get_config(struct kvm *kvm, void *dev)
 
 static u32 get_host_features(struct kvm *kvm, void *dev)
 {
-	return	1UL << VIRTIO_RING_F_EVENT_IDX |
-		1UL << VIRTIO_RING_F_INDIRECT_DESC;
+	struct scsi_dev *sdev = dev;
+	int r;
+	u64 vhost_features;
+	r = ioctl(sdev->vhost_fd, VHOST_GET_FEATURES, &vhost_features);
+	if (r != 0)
+		die_perror("VHOST_GET_FEATURES failed");
+	pr_debug("got features from vhost: 0x%016llx", vhost_features);
+	return (u32)(vhost_features & 0xffffffff);
 }
 
 static void set_guest_features(struct kvm *kvm, void *dev, u32 features)
 {
 	struct scsi_dev *sdev = dev;
-
-	sdev->features = features;
+	int r;
+	u64 vhost_features = features;
+	r = ioctl(sdev->vhost_fd, VHOST_SET_FEATURES, &vhost_features);
+	if (r != 0) {
+		sdev->vdev.status |= VIRTIO_CONFIG_S_NEEDS_RESET;
+		sdev->vdev.ops->signal_config(kvm, &sdev->vdev);
+	}
 }
 
 static void notify_status(struct kvm *kvm, void *dev, u32 status)
 {
+	struct scsi_dev *sdev = dev;
+	int r;
+	if (status & VIRTIO__STATUS_START) {
+		pr_debug("virtio-scsi ioctl(VHOST_SCSI_SET_ENDPOINT) wwpn=%s tpgt=%hu", sdev->target.vhost_wwpn, sdev->target.vhost_tpgt);
+		r = ioctl(sdev->vhost_fd, VHOST_SCSI_SET_ENDPOINT, &sdev->target);
+		if (r != 0)
+			die("VHOST_SCSI_SET_ENDPOINT failed %d", errno);
+	} else if (status & VIRTIO__STATUS_STOP) {
+		pr_debug("virtio-scsi ioctl(VHOST_SCSI_CLEAR_ENDPOINT)");
+		r = ioctl(sdev->vhost_fd, VHOST_SCSI_CLEAR_ENDPOINT, &sdev->target);
+		if (r != 0)
+			die("VHOST_SCSI_CLEAR_ENDPOINT failed %d", errno);
+	}
 }
 
 static int init_vq(struct kvm *kvm, void *dev, u32 vq, u32 page_size, u32 align,
@@ -121,13 +144,6 @@ static void notify_vq_gsi(struct kvm *kvm, void *dev, u32 vq, u32 gsi)
 	r = ioctl(sdev->vhost_fd, VHOST_SET_VRING_CALL, &file);
 	if (r < 0)
 		die_perror("VHOST_SET_VRING_CALL failed");
-
-	if (vq > 0)
-		return;
-
-	r = ioctl(sdev->vhost_fd, VHOST_SCSI_SET_ENDPOINT, &sdev->target);
-	if (r != 0)
-		die("VHOST_SCSI_SET_ENDPOINT failed %d", errno);
 }
 
 static void notify_vq_eventfd(struct kvm *kvm, void *dev, u32 vq, u32 efd)
@@ -192,8 +208,7 @@ static struct virtio_ops scsi_dev_virtio_ops = {
 static void virtio_scsi_vhost_init(struct kvm *kvm, struct scsi_dev *sdev)
 {
 	struct vhost_memory *mem;
-	u64 features;
-	int r;
+	int r, i;
 
 	sdev->vhost_fd = open("/dev/vhost-scsi", O_RDWR);
 	if (sdev->vhost_fd < 0)
@@ -214,13 +229,6 @@ static void virtio_scsi_vhost_init(struct kvm *kvm, struct scsi_dev *sdev)
 	if (r != 0)
 		die_perror("VHOST_SET_OWNER failed");
 
-	r = ioctl(sdev->vhost_fd, VHOST_GET_FEATURES, &features);
-	if (r != 0)
-		die_perror("VHOST_GET_FEATURES failed");
-
-	r = ioctl(sdev->vhost_fd, VHOST_SET_FEATURES, &features);
-	if (r != 0)
-		die_perror("VHOST_SET_FEATURES failed");
 	r = ioctl(sdev->vhost_fd, VHOST_SET_MEM_TABLE, mem);
 	if (r != 0)
 		die_perror("VHOST_SET_MEM_TABLE failed");
