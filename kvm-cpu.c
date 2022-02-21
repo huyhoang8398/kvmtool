@@ -154,7 +154,7 @@ int kvm_cpu__start(struct kvm_cpu *cpu)
 	signal(SIGKVMPAUSE, kvm_cpu_signal_handler);
 	signal(SIGKVMTASK, kvm_cpu_signal_handler);
 
-	kvm_cpu__reset_vcpu(cpu);
+	kvm_cpu__reset_vcpu(cpu, true);
 
 	if (cpu->kvm->cfg.single_step)
 		kvm_cpu__enable_singlestep(cpu);

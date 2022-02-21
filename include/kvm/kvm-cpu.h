@@ -13,7 +13,7 @@ int kvm_cpu__init(struct kvm *kvm);
 int kvm_cpu__exit(struct kvm *kvm);
 struct kvm_cpu *kvm_cpu__arch_init(struct kvm *kvm, unsigned long cpu_id);
 void kvm_cpu__delete(struct kvm_cpu *vcpu);
-void kvm_cpu__reset_vcpu(struct kvm_cpu *vcpu);
+void kvm_cpu__reset_vcpu(struct kvm_cpu *vcpu, bool reset);
 void kvm_cpu__setup_cpuid(struct kvm_cpu *vcpu);
 void kvm_cpu__enable_singlestep(struct kvm_cpu *vcpu);
 void kvm_cpu__run(struct kvm_cpu *vcpu);

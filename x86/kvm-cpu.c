@@ -3,6 +3,7 @@
 #include "kvm/symbol.h"
 #include "kvm/util.h"
 #include "kvm/kvm.h"
+#include "kvm/cpufeature.h"
 
 #include <asm/apicdef.h>
 #include <linux/err.h>
@@ -48,14 +49,6 @@ static inline u64 ip_to_flat(struct kvm_cpu *vcpu, u64 ip)
 	return ip + (cs << 4);
 }
 
-static inline u32 selector_to_base(u16 selector)
-{
-	/*
-	 * KVM on Intel requires 'base' to be 'selector * 16' in real mode.
-	 */
-	return (u32)selector << 4;
-}
-
 static struct kvm_cpu *kvm_cpu__new(struct kvm *kvm)
 {
 	struct kvm_cpu *vcpu;
@@ -71,8 +64,8 @@ static struct kvm_cpu *kvm_cpu__new(struct kvm *kvm)
 
 void kvm_cpu__delete(struct kvm_cpu *vcpu)
 {
-	if (vcpu->msrs)
-		free(vcpu->msrs);
+	if (vcpu->kvm_cpuid)
+		free(vcpu->kvm_cpuid);
 
 	free(vcpu);
 }
@@ -126,122 +119,36 @@ struct kvm_cpu *kvm_cpu__arch_init(struct kvm *kvm, unsigned long cpu_id)
 	return vcpu;
 }
 
-static struct kvm_msrs *kvm_msrs__new(size_t nmsrs)
-{
-	struct kvm_msrs *vcpu = calloc(1, sizeof(*vcpu) + (sizeof(struct kvm_msr_entry) * nmsrs));
-
-	if (!vcpu)
-		die("out of memory");
-
-	return vcpu;
-}
-
-#define MSR_IA32_SYSENTER_CS            0x00000174
-#define MSR_IA32_SYSENTER_ESP           0x00000175
-#define MSR_IA32_SYSENTER_EIP           0x00000176
-
-#define MSR_STAR                0xc0000081 /* legacy mode SYSCALL target */
-#define MSR_LSTAR               0xc0000082 /* long mode SYSCALL target */
-#define MSR_CSTAR               0xc0000083 /* compat mode SYSCALL target */
-#define MSR_SYSCALL_MASK        0xc0000084 /* EFLAGS mask for syscall */
-#define MSR_KERNEL_GS_BASE      0xc0000102 /* SwapGS GS shadow */
-
-#define MSR_IA32_TSC                    0x00000010
-#define MSR_IA32_MISC_ENABLE            0x000001a0
-
-#define MSR_IA32_MISC_ENABLE_FAST_STRING_BIT            0
-#define MSR_IA32_MISC_ENABLE_FAST_STRING                (1ULL << MSR_IA32_MISC_ENABLE_FAST_STRING_BIT)
-
-#define KVM_MSR_ENTRY(_index, _data)	\
-	(struct kvm_msr_entry) { .index = _index, .data = _data }
-
-static void kvm_cpu__setup_msrs(struct kvm_cpu *vcpu)
-{
-	unsigned long ndx = 0;
-
-	vcpu->msrs = kvm_msrs__new(100);
-
-	vcpu->msrs->entries[ndx++] = KVM_MSR_ENTRY(MSR_IA32_SYSENTER_CS,	0x0);
-	vcpu->msrs->entries[ndx++] = KVM_MSR_ENTRY(MSR_IA32_SYSENTER_ESP,	0x0);
-	vcpu->msrs->entries[ndx++] = KVM_MSR_ENTRY(MSR_IA32_SYSENTER_EIP,	0x0);
-#ifdef CONFIG_X86_64
-	vcpu->msrs->entries[ndx++] = KVM_MSR_ENTRY(MSR_STAR,			0x0);
-	vcpu->msrs->entries[ndx++] = KVM_MSR_ENTRY(MSR_CSTAR,			0x0);
-	vcpu->msrs->entries[ndx++] = KVM_MSR_ENTRY(MSR_KERNEL_GS_BASE,		0x0);
-	vcpu->msrs->entries[ndx++] = KVM_MSR_ENTRY(MSR_SYSCALL_MASK,		0x0);
-	vcpu->msrs->entries[ndx++] = KVM_MSR_ENTRY(MSR_LSTAR,			0x0);
-#endif
-	vcpu->msrs->entries[ndx++] = KVM_MSR_ENTRY(MSR_IA32_TSC,		0x0);
-	vcpu->msrs->entries[ndx++] = KVM_MSR_ENTRY(MSR_IA32_MISC_ENABLE,
-						MSR_IA32_MISC_ENABLE_FAST_STRING);
-
-	vcpu->msrs->nmsrs = ndx;
-
-	if (ioctl(vcpu->vcpu_fd, KVM_SET_MSRS, vcpu->msrs) < 0)
-		die_perror("KVM_SET_MSRS failed");
-}
-
-static void kvm_cpu__setup_fpu(struct kvm_cpu *vcpu)
-{
-	vcpu->fpu = (struct kvm_fpu) {
-		.fcw	= 0x37f,
-		.mxcsr	= 0x1f80,
-	};
-
-	if (ioctl(vcpu->vcpu_fd, KVM_SET_FPU, &vcpu->fpu) < 0)
-		die_perror("KVM_SET_FPU failed");
-}
-
-static void kvm_cpu__setup_regs(struct kvm_cpu *vcpu)
-{
-	vcpu->regs = (struct kvm_regs) {
-		/* We start the guest in 16-bit real mode  */
-		.rflags	= 0x0000000000000002ULL,
-
-		.rip	= vcpu->kvm->arch.boot_ip,
-		.rsp	= vcpu->kvm->arch.boot_sp,
-		.rbp	= vcpu->kvm->arch.boot_sp,
-	};
-
-	if (vcpu->regs.rip > USHRT_MAX)
-		die("ip 0x%llx is too high for real mode", (u64)vcpu->regs.rip);
-
-	if (ioctl(vcpu->vcpu_fd, KVM_SET_REGS, &vcpu->regs) < 0)
-		die_perror("KVM_SET_REGS failed");
-}
-
-static void kvm_cpu__setup_sregs(struct kvm_cpu *vcpu)
-{
-	if (ioctl(vcpu->vcpu_fd, KVM_GET_SREGS, &vcpu->sregs) < 0)
-		die_perror("KVM_GET_SREGS failed");
-
-	vcpu->sregs.cs.selector	= vcpu->kvm->arch.boot_selector;
-	vcpu->sregs.cs.base	= selector_to_base(vcpu->kvm->arch.boot_selector);
-	vcpu->sregs.ss.selector	= vcpu->kvm->arch.boot_selector;
-	vcpu->sregs.ss.base	= selector_to_base(vcpu->kvm->arch.boot_selector);
-	vcpu->sregs.ds.selector	= vcpu->kvm->arch.boot_selector;
-	vcpu->sregs.ds.base	= selector_to_base(vcpu->kvm->arch.boot_selector);
-	vcpu->sregs.es.selector	= vcpu->kvm->arch.boot_selector;
-	vcpu->sregs.es.base	= selector_to_base(vcpu->kvm->arch.boot_selector);
-	vcpu->sregs.fs.selector	= vcpu->kvm->arch.boot_selector;
-	vcpu->sregs.fs.base	= selector_to_base(vcpu->kvm->arch.boot_selector);
-	vcpu->sregs.gs.selector	= vcpu->kvm->arch.boot_selector;
-	vcpu->sregs.gs.base	= selector_to_base(vcpu->kvm->arch.boot_selector);
-
-	if (ioctl(vcpu->vcpu_fd, KVM_SET_SREGS, &vcpu->sregs) < 0)
-		die_perror("KVM_SET_SREGS failed");
-}
-
 /**
  * kvm_cpu__reset_vcpu - reset virtual CPU to a known state
  */
-void kvm_cpu__reset_vcpu(struct kvm_cpu *vcpu)
+void kvm_cpu__reset_vcpu(struct kvm_cpu *vcpu, bool reset)
 {
+	struct kvm_sregs sregs = vcpu->kvm->arch.bootstate.sregs;
+	struct kvm_regs regs = vcpu->kvm->arch.bootstate.regs;
+	struct cpuid_regs hostcpuid;
 	kvm_cpu__setup_cpuid(vcpu);
-	kvm_cpu__setup_sregs(vcpu);
-	kvm_cpu__setup_regs(vcpu);
-	kvm_cpu__setup_fpu(vcpu);
-	kvm_cpu__setup_msrs(vcpu);
+
+	// TODO: maintain cd/nw when reinit-ing cr0
+	sregs.apic_base += (vcpu->cpu_id == 0 ? 0x100 : 0);
+	if (ioctl(vcpu->vcpu_fd, KVM_SET_SREGS, &sregs) < 0)
+		die_perror("KVM_SET_SREGS failed");
+
+	hostcpuid = (struct cpuid_regs){.eax = 0x80000001ul};
+	host_cpuid(&hostcpuid);
+	regs.rdx = hostcpuid.eax;
+	if (ioctl(vcpu->vcpu_fd, KVM_SET_REGS, &regs) < 0)
+		die_perror("KVM_SET_REGS failed");
+
+	if (reset && ioctl(vcpu->vcpu_fd, KVM_SET_FPU, &vcpu->kvm->arch.bootstate.fpu) < 0)
+		die_perror("KVM_SET_FPU failed");
+
+	if (reset && ioctl(vcpu->vcpu_fd, KVM_SET_XCRS, &vcpu->kvm->arch.bootstate.xcrs) < 0)
+		die_perror("KVM_SET_XCRS failed");
+
+	// TODO: MSR reset/init logic
+	if (ioctl(vcpu->vcpu_fd, KVM_SET_MSRS, vcpu->kvm->arch.bootstate.msrs) < 0)
+		die_perror("KVM_SET_MSRS failed");
 }
 
 bool kvm_cpu__handle_exit(struct kvm_cpu *vcpu)

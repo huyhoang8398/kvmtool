@@ -1,6 +1,7 @@
 #include "kvm/kvm.h"
 
 #include "kvm/util.h"
+#include "kvm/bootstate.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -33,9 +34,9 @@ bool kvm__load_firmware(struct kvm *kvm, const char *firmware_filename)
 	while ((nr = read(fd, p, st.st_size)) > 0)
 		p += nr;
 
-	kvm->arch.boot_selector	= BIOS_SELECTOR;
-	kvm->arch.boot_ip	= BIOS_IP;
-	kvm->arch.boot_sp	= BIOS_SP;
+	kvm__bootstate_set_selectors(kvm, BIOS_SELECTOR);
+	kvm->arch.bootstate.regs.rip = BIOS_IP;
+	kvm->arch.bootstate.regs.rsp = kvm->arch.bootstate.regs.rbp = BIOS_SP;
 
 	return true;
 }

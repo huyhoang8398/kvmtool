@@ -6,6 +6,7 @@
 #include "kvm/util.h"
 #include "kvm/8250-serial.h"
 #include "kvm/virtio-console.h"
+#include "kvm/bootstate.h"
 
 #include <asm/bootparam.h>
 #include <linux/kvm.h>
@@ -135,6 +136,8 @@ void kvm__arch_init(struct kvm *kvm, const char *hugetlbfs_path, u64 ram_size)
 	struct kvm_pit_config pit_config = { .flags = 0, };
 	int ret;
 
+	kvm__bootstate_init(kvm);
+
 	ret = ioctl(kvm->vm_fd, KVM_SET_TSS_ADDR, 0xfffbd000);
 	if (ret < 0)
 		die_perror("KVM_SET_TSS_ADDR ioctl");
@@ -219,9 +222,9 @@ static bool load_flat_binary(struct kvm *kvm, int fd_kernel)
 	if (read_file(fd_kernel, p, kvm->cfg.ram_size) < 0)
 		die_perror("read");
 
-	kvm->arch.boot_selector	= BOOT_LOADER_SELECTOR;
-	kvm->arch.boot_ip	= BOOT_LOADER_IP;
-	kvm->arch.boot_sp	= BOOT_LOADER_SP;
+	kvm__bootstate_set_selectors(kvm, BOOT_LOADER_SELECTOR);
+	kvm->arch.bootstate.regs.rip = BOOT_LOADER_IP;
+	kvm->arch.bootstate.regs.rsp = kvm->arch.bootstate.regs.rbp = BOOT_LOADER_SP;
 
 	return true;
 }
@@ -324,13 +327,13 @@ static bool load_bzimage(struct kvm *kvm, int fd_kernel, int fd_initrd,
 		kern_boot->hdr.ramdisk_size	= initrd_stat.st_size;
 	}
 
-	kvm->arch.boot_selector = BOOT_LOADER_SELECTOR;
+	kvm__bootstate_set_selectors(kvm, BOOT_LOADER_SELECTOR);
 	/*
 	 * The real-mode setup code starts at offset 0x200 of a bzImage. See
 	 * Documentation/x86/boot.txt for details.
 	 */
-	kvm->arch.boot_ip = BOOT_LOADER_IP + 0x200;
-	kvm->arch.boot_sp = BOOT_LOADER_SP;
+	kvm->arch.bootstate.regs.rip = BOOT_LOADER_IP + 0x200;
+	kvm->arch.bootstate.regs.rsp = kvm->arch.bootstate.regs.rbp = BOOT_LOADER_SP;
 
 	return true;
 }

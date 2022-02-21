@@ -24,8 +24,6 @@ struct kvm_cpu {
 	struct kvm_sregs	sregs;
 	struct kvm_fpu		fpu;
 
-	struct kvm_msrs		*msrs;		/* dynamically allocated */
-
 	u8			is_running;
 	u8			paused;
 	u8			needs_nmi;
