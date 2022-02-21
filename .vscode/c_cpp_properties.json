@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/x86/include"
+            ],
+            "defines": [
+                "_FILE_OFFSET_BITS=64",
+                "_GNU_SOURCE",
+                "KVMTOOLS_VERSION=\"\"",
+                "BUILD_ARCH=\"x86\"",
+                "KVMTOOL_DEBUG_IO",
+                "CONFIG_X86_64"
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

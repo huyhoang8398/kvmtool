@@ -1,0 +1,15 @@
+{
+    "search.exclude": {
+        "arm/": true,
+        "mips/": true,
+        "powerpc/": true,
+        "riscv/": true
+    },
+    "editor.tabSize": 8,
+    "editor.insertSpaces": false,
+    "files.associations": {
+        "*.h": "c",
+        "*.dsl": "asl",
+        "cmath": "c"
+    }
+}
