@@ -5,6 +5,7 @@
 #include "kvm/util.h"
 #include "kvm/devices.h"
 #include "kvm/pci.h"
+#include "kvm/kvm-cpu.h"
 
 #include <linux/kernel.h>
 #include <string.h>
@@ -82,6 +83,7 @@ int mptable__init(struct kvm *kvm)
 	struct mpc_ioapic *mpc_ioapic;
 	struct mpc_intsrc *mpc_intsrc;
 	struct device_header *dev_hdr;
+	struct kvm_cpuid2 *cpuid2;
 
 	const int pcibusid = 0;
 	const int isabusid = 1;
@@ -89,6 +91,8 @@ int mptable__init(struct kvm *kvm)
 	unsigned int i, nentries = 0, ncpus = kvm->nrcpus;
 	unsigned int ioapicid;
 	void *last_addr;
+
+	int isa_irq_used[16] = {0};
 
 	/* That is where MP table will be in guest memory */
 	real_mpc_table = ALIGN(MB_BIOS_BEGIN + bios_rom_size, 16);
@@ -112,21 +116,31 @@ int mptable__init(struct kvm *kvm)
 	mpc_table->oemcount	= ncpus; /* will be updated again at end */
 
 	/*
-	 * CPUs enumeration. Technically speaking we should
-	 * ask either host or HV for apic version supported
-	 * but for a while we simply put some random value
-	 * here.
+	 * CPUs enumeration.
 	 */
 	mpc_cpu = (void *)&mpc_table[1];
+	cpuid2 = calloc(1, sizeof(struct kvm_cpuid2) + sizeof(struct kvm_cpuid_entry2));
 	for (i = 0; i < ncpus; i++) {
+		struct kvm_cpu *vcpu = kvm->cpus[i];
+
 		mpc_cpu->type		= MP_PROCESSOR;
 		mpc_cpu->apicid		= i;
 		mpc_cpu->apicver	= KVM_APIC_VERSION;
 		mpc_cpu->cpuflag	= gen_cpu_flag(i, ncpus);
-		mpc_cpu->cpufeature	= 0x600; /* some default value */
-		mpc_cpu->featureflag	= 0x201; /* some default value */
+
+		cpuid2->entries[0].function = 1;
+		cpuid2->entries[0].index = 0;
+		cpuid2->nent = 1;
+		if (ioctl(vcpu->vcpu_fd, KVM_GET_EMULATED_CPUID, cpuid2) == 1) {
+			mpc_cpu->cpufeature	= cpuid2->entries[0].eax;
+			mpc_cpu->featureflag	= cpuid2->entries[0].edx;
+		} else {
+			mpc_cpu->cpufeature	= 0x600; /* some default value */
+			mpc_cpu->featureflag	= 0x201; /* some default value */
+		}
 		mpc_cpu++;
 	}
+	free(cpuid2);
 
 	last_addr = (void *)mpc_cpu;
 	nentries += ncpus;
@@ -174,19 +188,28 @@ int mptable__init(struct kvm *kvm)
 	 * IRQ sources.
 	 * Also note we use PCI irqs here, no for ISA bus yet.
 	 */
-
-	dev_hdr = device__first_dev(DEVICE_BUS_PCI);
-	while (dev_hdr) {
+	for (dev_hdr = device__first_dev(DEVICE_BUS_PCI); dev_hdr; dev_hdr = device__next_dev(dev_hdr)) {
 		unsigned char srcbusirq;
 		struct pci_device_header *pci_hdr = dev_hdr->data;
 
-		srcbusirq = (pci_hdr->subsys_id << 2) | (pci_hdr->irq_pin - 1);
+		srcbusirq = (dev_hdr->dev_num << 2) | ((pci_hdr->irq_pin - 1) & 3);
 		mpc_intsrc = last_addr;
 		mptable_add_irq_src(mpc_intsrc, pcibusid, srcbusirq, ioapicid, pci_hdr->irq_line);
+		if (pci_hdr->irq_line < 16) {
+			isa_irq_used[pci_hdr->irq_line] = 1;
+		}
 
 		last_addr = (void *)&mpc_intsrc[1];
 		nentries++;
-		dev_hdr = device__next_dev(dev_hdr);
+	}
+
+	for (i = 0; i < 16; i++) {
+		if (!isa_irq_used[i] && i != 2) {
+			mpc_intsrc = last_addr;
+			mptable_add_irq_src(mpc_intsrc, isabusid, i, ioapicid, i ? i : 2);
+			last_addr = (void *)&mpc_intsrc[1];
+			nentries++;
+		}
 	}
 
 	/*
@@ -195,7 +218,6 @@ int mptable__init(struct kvm *kvm)
 	mpc_intsrc		= last_addr;
 	mpc_intsrc->type	= MP_LINTSRC;
 	mpc_intsrc->irqtype	= mp_ExtINT;
-	mpc_intsrc->irqtype	= mp_INT;
 	mpc_intsrc->irqflag	= MP_IRQDIR_DEFAULT;
 	mpc_intsrc->srcbus	= isabusid;
 	mpc_intsrc->srcbusirq	= 0;
@@ -211,7 +233,7 @@ int mptable__init(struct kvm *kvm)
 	mpc_intsrc->irqflag	= MP_IRQDIR_DEFAULT;
 	mpc_intsrc->srcbus	= isabusid;
 	mpc_intsrc->srcbusirq	= 0;
-	mpc_intsrc->dstapic	= 0; /* FIXME: BSP apic */
+	mpc_intsrc->dstapic	= 0xff; /* send NMI to all lapics (see MPS) */
 	mpc_intsrc->dstirq	= 1; /* LINT1 */
 
 	last_addr = (void *)&mpc_intsrc[1];
