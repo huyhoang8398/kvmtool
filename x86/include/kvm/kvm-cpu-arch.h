@@ -31,6 +31,8 @@ struct kvm_cpu {
 	u8			needs_nmi;
 
 	struct kvm_coalesced_mmio_ring	*ring;
+
+	struct kvm_cpuid2 	*kvm_cpuid;
 };
 
 /*
