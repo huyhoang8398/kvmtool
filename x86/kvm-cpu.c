@@ -15,6 +15,7 @@
 #include <stdio.h>
 
 static int debug_fd;
+static DEFINE_MUTEX(debug_mutex);
 
 void kvm_cpu__set_debug_fd(int fd)
 {
@@ -276,6 +277,8 @@ void kvm_cpu__show_registers(struct kvm_cpu *vcpu)
 	struct kvm_regs regs;
 	int i;
 
+	mutex_lock(&debug_mutex);
+
 	if (ioctl(vcpu->vcpu_fd, KVM_GET_REGS, &regs) < 0)
 		die("KVM_GET_REGS failed");
 
@@ -288,7 +291,7 @@ void kvm_cpu__show_registers(struct kvm_cpu *vcpu)
 	r10 = regs.r10; r11 = regs.r11; r12 = regs.r12;
 	r13 = regs.r13; r14 = regs.r14; r15 = regs.r15;
 
-	dprintf(debug_fd, "\n Registers:\n");
+	dprintf(debug_fd, "\n VCPU %lu Registers:\n", vcpu->cpu_id);
 	dprintf(debug_fd,   " ----------\n");
 	dprintf(debug_fd, " rip: %016lx   rsp: %016lx flags: %016lx\n", rip, rsp, rflags);
 	dprintf(debug_fd, " rax: %016lx   rbx: %016lx   rcx: %016lx\n", rax, rbx, rcx);
@@ -330,6 +333,8 @@ void kvm_cpu__show_registers(struct kvm_cpu *vcpu)
 	for (i = 0; i < (KVM_NR_INTERRUPTS + 63) / 64; i++)
 		dprintf(debug_fd, " %016llx", (u64) sregs.interrupt_bitmap[i]);
 	dprintf(debug_fd, "\n");
+
+	mutex_unlock(&debug_mutex);
 }
 
 #define MAX_SYM_LEN 128
@@ -344,6 +349,8 @@ void kvm_cpu__show_code(struct kvm_cpu *vcpu)
 	unsigned int i;
 	u8 *ip;
 
+	mutex_lock(&debug_mutex);
+
 	if (ioctl(vcpu->vcpu_fd, KVM_GET_REGS, &vcpu->regs) < 0)
 		die("KVM_GET_REGS failed");
 
@@ -352,7 +359,7 @@ void kvm_cpu__show_code(struct kvm_cpu *vcpu)
 
 	ip = guest_flat_to_host(vcpu->kvm, ip_to_flat(vcpu, vcpu->regs.rip) - code_prologue);
 
-	dprintf(debug_fd, "\n Code:\n");
+	dprintf(debug_fd, "\n VCPU %lu Code:\n", vcpu->cpu_id);
 	dprintf(debug_fd,   " -----\n");
 
 	psym = symbol_lookup(vcpu->kvm, vcpu->regs.rip, sym, MAX_SYM_LEN);
@@ -381,6 +388,8 @@ void kvm_cpu__show_code(struct kvm_cpu *vcpu)
 	dprintf(debug_fd,   " ------\n");
 	dprintf(debug_fd, " rsp: [<%016lx>] \n", (unsigned long) vcpu->regs.rsp);
 	kvm__dump_mem(vcpu->kvm, vcpu->regs.rsp, 32, debug_fd);
+
+	mutex_unlock(&debug_mutex);
 }
 
 void kvm_cpu__show_page_tables(struct kvm_cpu *vcpu)
