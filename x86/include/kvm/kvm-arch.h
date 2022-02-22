@@ -46,7 +46,7 @@ struct kvm_arch_bootstate {
 
 struct kvm_arch {
 	struct kvm_arch_bootstate bootstate;
-
+	struct e820map *e820;
 	struct interrupt_table	interrupt_table;
 };
 

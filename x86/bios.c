@@ -60,7 +60,8 @@ static void e820_setup(struct kvm *kvm)
 	struct e820entry *mem_map;
 	unsigned int i = 0;
 
-	e820		= guest_flat_to_host(kvm, E820_MAP_START);
+	kvm->arch.e820	= guest_flat_to_host(kvm, E820_MAP_START);
+	e820		= kvm->arch.e820;
 	mem_map		= e820->map;
 
 	mem_map[i++]	= (struct e820entry) {
