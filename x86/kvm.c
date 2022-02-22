@@ -7,6 +7,7 @@
 #include "kvm/8250-serial.h"
 #include "kvm/virtio-console.h"
 #include "kvm/bootstate.h"
+#include "kvm/multiboot.h"
 
 #include <asm/bootparam.h>
 #include <linux/kvm.h>
@@ -246,6 +247,9 @@ static bool load_bzimage(struct kvm *kvm, int fd_kernel, int fd_initrd,
 	 * memory layout.
 	 */
 
+	if (lseek(fd_kernel, 0, SEEK_SET) < 0)
+		die_perror("lseek");
+
 	if (read_in_full(fd_kernel, &boot, sizeof(boot)) != sizeof(boot))
 		return false;
 
@@ -341,6 +345,9 @@ static bool load_bzimage(struct kvm *kvm, int fd_kernel, int fd_initrd,
 bool kvm__arch_load_kernel_image(struct kvm *kvm, int fd_kernel, int fd_initrd,
 				 const char *kernel_cmdline)
 {
+	if (load_multiboot(kvm, fd_kernel, fd_initrd, kernel_cmdline))
+		return true;
+
 	if (load_bzimage(kvm, fd_kernel, fd_initrd, kernel_cmdline))
 		return true;
 	pr_warning("Kernel image is not a bzImage.");

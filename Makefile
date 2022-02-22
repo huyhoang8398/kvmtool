@@ -134,6 +134,7 @@ ifeq ($(ARCH),x86)
 	OBJS	+= x86/kvm-cpu.o
 	OBJS	+= x86/mptable.o
 	OBJS	+= x86/bootstate.o
+	OBJS	+= x86/multiboot.o
 # Exclude BIOS object files from header dependencies.
 	OTHEROBJS	+= x86/bios.o
 	OTHEROBJS	+= x86/bios/bios-rom.o
