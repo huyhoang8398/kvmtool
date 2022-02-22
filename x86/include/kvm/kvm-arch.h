@@ -36,14 +36,16 @@
 
 #define VIRTIO_DEFAULT_TRANS(kvm)	VIRTIO_PCI
 
+struct kvm_arch_bootstate {
+	struct kvm_sregs	sregs;
+	struct kvm_regs		regs;
+	struct kvm_fpu		fpu;
+	struct kvm_xcrs		xcrs;
+	struct kvm_msrs		*msrs;
+};
+
 struct kvm_arch {
-	struct kvm_arch_bootstate {
-		struct kvm_sregs	sregs;
-		struct kvm_regs		regs;
-		struct kvm_fpu		fpu;
-		struct kvm_xcrs		xcrs;
-		struct kvm_msrs		*msrs;
-	} bootstate;
+	struct kvm_arch_bootstate bootstate;
 
 	struct interrupt_table	interrupt_table;
 };

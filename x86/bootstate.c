@@ -54,12 +54,6 @@ static void kvm_bootstate__setup_sregs(struct kvm_sregs *sregs)
 	    .selector = 0,
 	    .type = 0x2,
 	    .present = 1,
-	    .dpl = 0,
-	    .db = 0,
-	    .s = 0,
-	    .l = 0,
-	    .g = 0,
-	    .avl = 0,
 	};
 	sregs->tr = (struct kvm_segment){
 	    .base = 0,
@@ -67,12 +61,6 @@ static void kvm_bootstate__setup_sregs(struct kvm_sregs *sregs)
 	    .selector = 0,
 	    .type = 0xb,
 	    .present = 1,
-	    .dpl = 0,
-	    .db = 0,
-	    .s = 0,
-	    .l = 0,
-	    .g = 0,
-	    .avl = 0,
 	};
 	sregs->apic_base = 0xfee00800ul;
 }

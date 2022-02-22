@@ -216,6 +216,10 @@ int kvm_cpu__start(struct kvm_cpu *cpu)
 				break;
 			goto exit_kvm;
 		case KVM_EXIT_SHUTDOWN:
+			pr_warning("VM shutting down with triple fault");
+			kvm_cpu__show_registers(cpu);
+			kvm_cpu__show_code(cpu);
+			kvm__reboot(cpu->kvm);
 			goto exit_kvm;
 		case KVM_EXIT_SYSTEM_EVENT:
 			/*
