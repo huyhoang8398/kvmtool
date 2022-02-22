@@ -35,7 +35,7 @@ static bool load_multiboot_flat(struct kvm *kvm, int fd_kernel,
 	u64 file_offset = s->mb_offset - (s->mbh->header_addr - s->mbh->load_addr);
 	u64 read_count;
 
-	pr_info("Loading Multiboot flat image");
+	pr_debug("Loading Multiboot flat image");
 
 	if (lseek(fd_kernel, file_offset, SEEK_SET) < 0)
 		die_perror("lseek");
@@ -52,7 +52,7 @@ static bool load_multiboot_flat(struct kvm *kvm, int fd_kernel,
 		if (read_count < 0)
 			return false;
 	}
-	pr_info("read %#llx bytes from file_offset %#llx into %#x", read_count, file_offset, s->mbh->load_addr);
+	pr_debug("read %#llx bytes from file_offset %#llx into %#x", read_count, file_offset, s->mbh->load_addr);
 	/* mbi immediately follows our loaded image */
 	s->mbi_addr = ALIGN_UP(s->mbh->load_addr + read_count, PAGE_SIZE);
 
@@ -65,7 +65,7 @@ static bool load_multiboot_flat(struct kvm *kvm, int fd_kernel,
 			u64 bss_size = s->mbh->bss_end_addr - bss_addr;
 			memset(bss, 0, bss_size);
 			s->mbi_addr = ALIGN_UP(s->mbh->bss_end_addr, PAGE_SIZE);
-			pr_info("clearing bss from %#llx to %#x", bss_addr, s->mbh->bss_end_addr);
+			pr_debug("clearing bss from %#llx to %#x", bss_addr, s->mbh->bss_end_addr);
 		}
 	}
 
@@ -73,7 +73,7 @@ static bool load_multiboot_flat(struct kvm *kvm, int fd_kernel,
 		return false;
 	s->ibuf = guest_flat_to_host(kvm, s->mbi_addr);
 	s->entry_addr = s->mbh->entry_addr;
-	pr_info("installing mbi at %#llx", s->mbi_addr);
+	pr_debug("installing mbi at %#llx", s->mbi_addr);
 
 	return true;
 }
