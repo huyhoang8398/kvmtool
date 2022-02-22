@@ -22,6 +22,8 @@ struct mbi_full
 
 struct mbl_state
 {
+	/* end of usable below-4g address region */
+	u32 load_limit;
 	u64 mb_offset;
 	struct multiboot_header *mbh;
 	u64 mbi_addr;
@@ -49,7 +51,7 @@ static bool load_multiboot_flat(struct kvm *kvm, int fd_kernel,
 	}
 	else
 	{
-		read_count = read_file(fd_kernel, p, KVM_32BIT_GAP_START - s->mbh->load_addr);
+		read_count = read_file(fd_kernel, p, s->load_limit - s->mbh->load_addr);
 		if (read_count < 0)
 			return false;
 	}
@@ -70,7 +72,7 @@ static bool load_multiboot_flat(struct kvm *kvm, int fd_kernel,
 		}
 	}
 
-	if (s->mbi_addr + sizeof(struct mbi_full) > KVM_32BIT_GAP_START)
+	if (s->mbi_addr + sizeof(struct mbi_full) > s->load_limit)
 		return false;
 	s->mbi_buf = guest_flat_to_host(kvm, s->mbi_addr);
 	s->entry_addr = s->mbh->entry_addr;
@@ -92,10 +94,7 @@ static void prep_mbi(struct kvm *kvm, struct mbl_state *s, const char *kernel_cm
 	/* fill memory info */
 	s->mbi_buf->mbi.flags |= MULTIBOOT_INFO_MEMORY;
 	s->mbi_buf->mbi.mem_lower = (EBDA_START - REAL_MODE_IVT_BEGIN) >> 10;
-	if (kvm->ram_size < KVM_32BIT_GAP_START)
-		s->mbi_buf->mbi.mem_upper = (kvm->ram_size - MB_KERNEL_START) >> 10;
-	else
-		s->mbi_buf->mbi.mem_upper = (KVM_32BIT_GAP_START - MB_KERNEL_START) >> 10;
+	s->mbi_buf->mbi.mem_upper = (s->load_limit - MB_KERNEL_START) >> 10;
 
 	if (kernel_cmdline)
 	{
@@ -124,28 +123,20 @@ static void prep_mbi(struct kvm *kvm, struct mbl_state *s, const char *kernel_cm
 	    .len = MB_BIOS_END - MB_BIOS_BEGIN,
 	    .type = MULTIBOOT_MEMORY_RESERVED,
 	};
-	if (kvm->ram_size < KVM_32BIT_GAP_START)
-		s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
-		    .size = MB_MMAP_ENTRY_SIZE,
-		    .addr = MB_KERNEL_START,
-		    .len = kvm->ram_size - MB_KERNEL_START,
-		    .type = MULTIBOOT_MEMORY_AVAILABLE,
-		};
-	else
-	{
-		s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
-		    .size = MB_MMAP_ENTRY_SIZE,
-		    .addr = MB_KERNEL_START,
-		    .len = KVM_32BIT_GAP_START - MB_KERNEL_START,
-		    .type = MULTIBOOT_MEMORY_AVAILABLE,
-		};
+	s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
+	    .size = MB_MMAP_ENTRY_SIZE,
+	    .addr = MB_KERNEL_START,
+	    .len = s->load_limit - MB_KERNEL_START,
+	    .type = MULTIBOOT_MEMORY_AVAILABLE,
+	};
+	if (kvm->ram_size >= KVM_32BIT_GAP_START)
 		s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
 		    .size = MB_MMAP_ENTRY_SIZE,
 		    .addr = KVM_32BIT_MAX_MEM_SIZE,
 		    .len = kvm->ram_size - KVM_32BIT_MAX_MEM_SIZE,
 		    .type = MULTIBOOT_MEMORY_AVAILABLE,
 		};
-	}
+
 	s->mbi_buf->mbi.mmap_length = m * sizeof(multiboot_memory_map_t);
 	s->mbi_buf->mbi.mmap_addr = host_to_guest_flat(kvm, s->mbi_buf->mmap);
 }
@@ -190,7 +181,9 @@ bool load_multiboot(struct kvm *kvm, int fd_kernel, int fd_initrd,
 		    const char *kernel_cmdline)
 {
 	u32 mb_search[MULTIBOOT_SEARCH / sizeof(u32)];
-	struct mbl_state s = {0};
+	struct mbl_state s = {
+	    .load_limit = min(kvm->ram_size, KVM_32BIT_GAP_START),
+	};
 
 	if (lseek(fd_kernel, 0, SEEK_SET) < 0)
 		die_perror("lseek");
@@ -228,7 +221,7 @@ bool load_multiboot(struct kvm *kvm, int fd_kernel, int fd_initrd,
 			if (s.mbh->load_end_addr <= s.mbh->load_addr)
 				return false;
 
-			if (s.mbh->load_end_addr > KVM_32BIT_GAP_START)
+			if (s.mbh->load_end_addr > s.load_limit)
 				return false;
 
 			if (s.mbh->entry_addr > s.mbh->load_end_addr)
@@ -253,7 +246,7 @@ bool load_multiboot(struct kvm *kvm, int fd_kernel, int fd_initrd,
 				/* reject overlapping bss region */
 				return false;
 
-			if (s.mbh->bss_end_addr > KVM_32BIT_GAP_START)
+			if (s.mbh->bss_end_addr > s.load_limit)
 				/* reject overly-big bss */
 				return false;
 		}
@@ -267,10 +260,10 @@ bool load_multiboot(struct kvm *kvm, int fd_kernel, int fd_initrd,
 	if (fd_initrd >= 0)
 	{
 		u64 mod_start = ALIGN_UP(s.mbi_addr + sizeof(struct mbi_full), PAGE_SIZE);
-		if (mod_start > KVM_32BIT_GAP_START)
+		if (mod_start > s.load_limit)
 			die("not enough memory for module");
 		void *mod = guest_flat_to_host(kvm, mod_start);
-		ssize_t modsz = read_file(fd_initrd, mod, KVM_32BIT_GAP_START - mod_start);
+		ssize_t modsz = read_file(fd_initrd, mod, s.load_limit - mod_start);
 		if (modsz < 0)
 			die("cannot read module, is module too large?");
 		s.mbi_buf->module = (multiboot_module_t){
