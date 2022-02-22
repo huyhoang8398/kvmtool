@@ -45,6 +45,13 @@ static void seabios_debug_io(struct kvm_cpu *vcpu, u64 addr, u8 *data,
 	putchar(ch);
 }
 
+static void qemu_isa_debug_io(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
+			      u8 is_write, void *ptr)
+{
+	if (is_write)
+		kvm__reboot(vcpu->kvm);
+}
+
 /*
  * The "fast A20 gate"
  */
@@ -135,6 +142,10 @@ static int ioport__setup_arch(struct kvm *kvm)
 		return r;
 
 	r = kvm__register_pio(kvm, 0x0402, 1, seabios_debug_io, NULL);
+	if (r < 0)
+		return r;
+
+	r = kvm__register_pio(kvm, 0x0501, 4, qemu_isa_debug_io, NULL);
 	if (r < 0)
 		return r;
 
