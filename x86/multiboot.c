@@ -2,11 +2,11 @@
 #include "kvm/multiboot-def.h"
 #include "kvm/kvm-arch.h"
 #include "kvm/strbuf.h"
+#include "kvm/e820.h"
 #include "kvm/multiboot.h"
 #include <elf.h>
 
 #define MB_KERNEL_START 0x100000
-#define MMAP_MAX_ENTRIES 128
 #define CMDLINE_MAX_LEN 4096
 #define MB_MMAP_ENTRY_SIZE (sizeof(multiboot_memory_map_t) - offsetof(multiboot_memory_map_t, addr))
 
@@ -15,7 +15,7 @@
 struct mbi_full
 {
 	struct multiboot_info mbi;
-	multiboot_memory_map_t mmap[MMAP_MAX_ENTRIES];
+	multiboot_memory_map_t mmap[E820MAX];
 	char cmdline[CMDLINE_MAX_LEN];
 	multiboot_module_t module;
 };
@@ -89,8 +89,6 @@ static bool load_multiboot_elf(struct kvm *kvm, int fd_kernel)
 
 static void prep_mbi(struct kvm *kvm, struct mbl_state *s, const char *kernel_cmdline)
 {
-	unsigned int m = 0;
-
 	/* fill memory info */
 	s->mbi_buf->mbi.flags |= MULTIBOOT_INFO_MEMORY;
 	s->mbi_buf->mbi.mem_lower = (EBDA_START - REAL_MODE_IVT_BEGIN) >> 10;
@@ -105,39 +103,14 @@ static void prep_mbi(struct kvm *kvm, struct mbl_state *s, const char *kernel_cm
 
 	/* fill memmap */
 	s->mbi_buf->mbi.flags |= MULTIBOOT_INFO_MEM_MAP;
-	s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
-	    .size = MB_MMAP_ENTRY_SIZE,
-	    .addr = REAL_MODE_IVT_BEGIN,
-	    .len = EBDA_START - REAL_MODE_IVT_BEGIN,
-	    .type = MULTIBOOT_MEMORY_AVAILABLE,
-	};
-	s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
-	    .size = MB_MMAP_ENTRY_SIZE,
-	    .addr = EBDA_START,
-	    .len = VGA_RAM_BEGIN - EBDA_START,
-	    .type = MULTIBOOT_MEMORY_RESERVED,
-	};
-	s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
-	    .size = MB_MMAP_ENTRY_SIZE,
-	    .addr = MB_BIOS_BEGIN,
-	    .len = MB_BIOS_END - MB_BIOS_BEGIN,
-	    .type = MULTIBOOT_MEMORY_RESERVED,
-	};
-	s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
-	    .size = MB_MMAP_ENTRY_SIZE,
-	    .addr = MB_KERNEL_START,
-	    .len = s->load_limit - MB_KERNEL_START,
-	    .type = MULTIBOOT_MEMORY_AVAILABLE,
-	};
-	if (kvm->ram_size >= KVM_32BIT_GAP_START)
-		s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
+	for (u32 i = 0; i < kvm->arch.e820->nr_map; i++)
+		s->mbi_buf->mmap[i] = (multiboot_memory_map_t){
 		    .size = MB_MMAP_ENTRY_SIZE,
-		    .addr = KVM_32BIT_MAX_MEM_SIZE,
-		    .len = kvm->ram_size - KVM_32BIT_MAX_MEM_SIZE,
-		    .type = MULTIBOOT_MEMORY_AVAILABLE,
+		    .addr = kvm->arch.e820->map[i].addr,
+		    .len = kvm->arch.e820->map[i].size,
+		    .type = kvm->arch.e820->map[i].type,
 		};
-
-	s->mbi_buf->mbi.mmap_length = m * sizeof(multiboot_memory_map_t);
+	s->mbi_buf->mbi.mmap_length = kvm->arch.e820->nr_map * sizeof(multiboot_memory_map_t);
 	s->mbi_buf->mbi.mmap_addr = host_to_guest_flat(kvm, s->mbi_buf->mmap);
 }
 
