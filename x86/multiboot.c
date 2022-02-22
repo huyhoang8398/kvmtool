@@ -17,6 +17,7 @@ struct mbi_full
 	struct multiboot_info mbi;
 	multiboot_memory_map_t mmap[MMAP_MAX_ENTRIES];
 	char cmdline[CMDLINE_MAX_LEN];
+	multiboot_module_t module;
 };
 
 struct mbl_state
@@ -24,7 +25,7 @@ struct mbl_state
 	u64 mb_offset;
 	struct multiboot_header *mbh;
 	u64 mbi_addr;
-	struct mbi_full *ibuf;
+	struct mbi_full *mbi_buf;
 	u64 entry_addr;
 };
 
@@ -71,7 +72,7 @@ static bool load_multiboot_flat(struct kvm *kvm, int fd_kernel,
 
 	if (s->mbi_addr + sizeof(struct mbi_full) > KVM_32BIT_GAP_START)
 		return false;
-	s->ibuf = guest_flat_to_host(kvm, s->mbi_addr);
+	s->mbi_buf = guest_flat_to_host(kvm, s->mbi_addr);
 	s->entry_addr = s->mbh->entry_addr;
 	pr_debug("installing mbi at %#llx", s->mbi_addr);
 
@@ -89,42 +90,42 @@ static void prep_mbi(struct kvm *kvm, struct mbl_state *s, const char *kernel_cm
 	unsigned int m = 0;
 
 	/* fill memory info */
-	s->ibuf->mbi.flags |= MULTIBOOT_INFO_MEMORY;
-	s->ibuf->mbi.mem_lower = (EBDA_START - REAL_MODE_IVT_BEGIN) >> 10;
+	s->mbi_buf->mbi.flags |= MULTIBOOT_INFO_MEMORY;
+	s->mbi_buf->mbi.mem_lower = (EBDA_START - REAL_MODE_IVT_BEGIN) >> 10;
 	if (kvm->ram_size < KVM_32BIT_GAP_START)
-		s->ibuf->mbi.mem_upper = (kvm->ram_size - MB_KERNEL_START) >> 10;
+		s->mbi_buf->mbi.mem_upper = (kvm->ram_size - MB_KERNEL_START) >> 10;
 	else
-		s->ibuf->mbi.mem_upper = (KVM_32BIT_GAP_START - MB_KERNEL_START) >> 10;
+		s->mbi_buf->mbi.mem_upper = (KVM_32BIT_GAP_START - MB_KERNEL_START) >> 10;
 
 	if (kernel_cmdline)
 	{
-		s->ibuf->mbi.flags |= MULTIBOOT_INFO_CMDLINE;
-		strlcpy(s->ibuf->cmdline, kernel_cmdline, CMDLINE_MAX_LEN);
-		s->ibuf->mbi.cmdline = host_to_guest_flat(kvm, s->ibuf->cmdline);
+		s->mbi_buf->mbi.flags |= MULTIBOOT_INFO_CMDLINE;
+		strlcpy(s->mbi_buf->cmdline, kernel_cmdline, CMDLINE_MAX_LEN);
+		s->mbi_buf->mbi.cmdline = host_to_guest_flat(kvm, s->mbi_buf->cmdline);
 	}
 
 	/* fill memmap */
-	s->ibuf->mbi.flags |= MULTIBOOT_INFO_MEM_MAP;
-	s->ibuf->mmap[m++] = (multiboot_memory_map_t){
+	s->mbi_buf->mbi.flags |= MULTIBOOT_INFO_MEM_MAP;
+	s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
 	    .size = MB_MMAP_ENTRY_SIZE,
 	    .addr = REAL_MODE_IVT_BEGIN,
 	    .len = EBDA_START - REAL_MODE_IVT_BEGIN,
 	    .type = MULTIBOOT_MEMORY_AVAILABLE,
 	};
-	s->ibuf->mmap[m++] = (multiboot_memory_map_t){
+	s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
 	    .size = MB_MMAP_ENTRY_SIZE,
 	    .addr = EBDA_START,
 	    .len = VGA_RAM_BEGIN - EBDA_START,
 	    .type = MULTIBOOT_MEMORY_RESERVED,
 	};
-	s->ibuf->mmap[m++] = (multiboot_memory_map_t){
+	s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
 	    .size = MB_MMAP_ENTRY_SIZE,
 	    .addr = MB_BIOS_BEGIN,
 	    .len = MB_BIOS_END - MB_BIOS_BEGIN,
 	    .type = MULTIBOOT_MEMORY_RESERVED,
 	};
 	if (kvm->ram_size < KVM_32BIT_GAP_START)
-		s->ibuf->mmap[m++] = (multiboot_memory_map_t){
+		s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
 		    .size = MB_MMAP_ENTRY_SIZE,
 		    .addr = MB_KERNEL_START,
 		    .len = kvm->ram_size - MB_KERNEL_START,
@@ -132,21 +133,21 @@ static void prep_mbi(struct kvm *kvm, struct mbl_state *s, const char *kernel_cm
 		};
 	else
 	{
-		s->ibuf->mmap[m++] = (multiboot_memory_map_t){
+		s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
 		    .size = MB_MMAP_ENTRY_SIZE,
 		    .addr = MB_KERNEL_START,
 		    .len = KVM_32BIT_GAP_START - MB_KERNEL_START,
 		    .type = MULTIBOOT_MEMORY_AVAILABLE,
 		};
-		s->ibuf->mmap[m++] = (multiboot_memory_map_t){
+		s->mbi_buf->mmap[m++] = (multiboot_memory_map_t){
 		    .size = MB_MMAP_ENTRY_SIZE,
 		    .addr = KVM_32BIT_MAX_MEM_SIZE,
 		    .len = kvm->ram_size - KVM_32BIT_MAX_MEM_SIZE,
 		    .type = MULTIBOOT_MEMORY_AVAILABLE,
 		};
 	}
-	s->ibuf->mbi.mmap_length = m * sizeof(multiboot_memory_map_t);
-	s->ibuf->mbi.mmap_addr = host_to_guest_flat(kvm, s->ibuf->mmap);
+	s->mbi_buf->mbi.mmap_length = m * sizeof(multiboot_memory_map_t);
+	s->mbi_buf->mbi.mmap_addr = host_to_guest_flat(kvm, s->mbi_buf->mmap);
 }
 
 static void prep_bootstate(struct kvm *kvm, struct mbl_state *s)
@@ -265,9 +266,20 @@ bool load_multiboot(struct kvm *kvm, int fd_kernel, int fd_initrd,
 
 	if (fd_initrd >= 0)
 	{
-		/* not implemented yet */
-		pr_err("initrd loading not implemented yet");
-		return false;
+		u64 mod_start = ALIGN_UP(s.mbi_addr + sizeof(struct mbi_full), PAGE_SIZE);
+		if (mod_start > KVM_32BIT_GAP_START)
+			die("not enough memory for module");
+		void *mod = guest_flat_to_host(kvm, mod_start);
+		ssize_t modsz = read_file(fd_initrd, mod, KVM_32BIT_GAP_START - mod_start);
+		if (modsz < 0)
+			die("cannot read module, is module too large?");
+		s.mbi_buf->module = (multiboot_module_t){
+		    .mod_start = mod_start,
+		    .mod_end = mod_start + modsz,
+		};
+		s.mbi_buf->mbi.mods_count = 1;
+		s.mbi_buf->mbi.mods_addr = host_to_guest_flat(kvm, &s.mbi_buf->module);
+		s.mbi_buf->mbi.flags |= MULTIBOOT_INFO_MODS;
 	}
 
 	prep_mbi(kvm, &s, kernel_cmdline);
