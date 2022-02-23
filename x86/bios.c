@@ -56,12 +56,11 @@ static void setup_irq_handler(struct kvm *kvm, struct irq_handler *handler)
  */
 static void e820_setup(struct kvm *kvm)
 {
-	struct e820map *e820;
+	struct e820map *e820, *guest_e820;
 	struct e820entry *mem_map;
 	unsigned int i = 0;
 
-	kvm->arch.e820	= guest_flat_to_host(kvm, E820_MAP_START);
-	e820		= kvm->arch.e820;
+	e820		= &kvm->arch.e820;
 	mem_map		= e820->map;
 
 	mem_map[i++]	= (struct e820entry) {
@@ -101,6 +100,9 @@ static void e820_setup(struct kvm *kvm)
 	BUG_ON(i > E820_X_MAX);
 
 	e820->nr_map = i;
+
+	guest_e820 = guest_flat_to_host(kvm, E820_MAP_START);
+	memcpy(e820, guest_e820, sizeof(*e820));
 }
 
 static void setup_vga_rom(struct kvm *kvm)

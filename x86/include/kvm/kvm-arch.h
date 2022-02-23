@@ -2,6 +2,7 @@
 #define KVM__KVM_ARCH_H
 
 #include "kvm/interrupt.h"
+#include "kvm/e820.h"
 #include "asm/kvm.h"
 
 #include <stdbool.h>
@@ -46,8 +47,8 @@ struct kvm_arch_bootstate {
 
 struct kvm_arch {
 	struct kvm_arch_bootstate bootstate;
-	struct e820map *e820;
-	struct interrupt_table	interrupt_table;
+	struct e820map e820;
+	struct interrupt_table interrupt_table;
 };
 
 #endif /* KVM__KVM_ARCH_H */

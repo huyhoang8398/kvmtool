@@ -103,14 +103,14 @@ static void prep_mbi(struct kvm *kvm, struct mbl_state *s, const char *kernel_cm
 
 	/* fill memmap */
 	s->mbi_buf->mbi.flags |= MULTIBOOT_INFO_MEM_MAP;
-	for (u32 i = 0; i < kvm->arch.e820->nr_map; i++)
+	for (u32 i = 0; i < kvm->arch.e820.nr_map; i++)
 		s->mbi_buf->mmap[i] = (multiboot_memory_map_t){
 		    .size = MB_MMAP_ENTRY_SIZE,
-		    .addr = kvm->arch.e820->map[i].addr,
-		    .len = kvm->arch.e820->map[i].size,
-		    .type = kvm->arch.e820->map[i].type,
+		    .addr = kvm->arch.e820.map[i].addr,
+		    .len = kvm->arch.e820.map[i].size,
+		    .type = kvm->arch.e820.map[i].type,
 		};
-	s->mbi_buf->mbi.mmap_length = kvm->arch.e820->nr_map * sizeof(multiboot_memory_map_t);
+	s->mbi_buf->mbi.mmap_length = kvm->arch.e820.nr_map * sizeof(multiboot_memory_map_t);
 	s->mbi_buf->mbi.mmap_addr = host_to_guest_flat(kvm, s->mbi_buf->mmap);
 }
 
