@@ -34,6 +34,7 @@ struct kvm_ext kvm_req_ext[] = {
 	{ DEFINE_KVM_EXT(KVM_CAP_HLT) },
 	{ DEFINE_KVM_EXT(KVM_CAP_IRQ_INJECT_STATUS) },
 	{ DEFINE_KVM_EXT(KVM_CAP_EXT_CPUID) },
+	{ DEFINE_KVM_EXT(KVM_CAP_GET_TSC_KHZ) },
 	{ 0, 0 }
 };
 

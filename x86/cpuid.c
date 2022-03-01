@@ -13,6 +13,10 @@ static void filter_cpuid(struct kvm_cpu *vcpu)
 {
 	unsigned int i;
 	struct kvm_cpuid2 *kvm_cpuid = vcpu->kvm_cpuid;
+	bool found_0x40000000 = false;
+	bool found_0x40000010 = false;
+
+	int tsc_khz = ioctl(vcpu->vcpu_fd, KVM_GET_TSC_KHZ);
 
 	/*
 	 * Filter CPUID functions that are not supported by the hypervisor.
@@ -85,11 +89,35 @@ static void filter_cpuid(struct kvm_cpu *vcpu)
 			}
 			entry->edx = vcpu->cpu_id;
 			break;
+		case 0x40000000: /* hypervisor */
+			found_0x40000000 = true;
+			entry->eax = 0x40000010;
+			entry->ebx = entry->ecx = entry->edx = 0x4d564b4c; /* "LKVM" */
+			break;
+		case 0x40000010: /* tsc freq */
+			found_0x40000010 = true;
+			entry->eax = tsc_khz < 0 ? 0 : tsc_khz;
+			break;
 		default:
 			/* Keep the CPUID function as -is */
 			break;
 		};
 	}
+
+	if (!found_0x40000000 && kvm_cpuid->nent < MAX_KVM_CPUID_ENTRIES - 1)
+		kvm_cpuid->entries[kvm_cpuid->nent++] = (struct kvm_cpuid_entry2){
+			.function = 0x40000000,
+			.eax = 0x40000010,
+			.ebx = 0x4d564b4c,
+			.ecx = 0x4d564b4c,
+			.edx = 0x4d564b4c,
+		};
+
+	if (!found_0x40000010 && kvm_cpuid->nent < MAX_KVM_CPUID_ENTRIES - 1)
+		kvm_cpuid->entries[kvm_cpuid->nent++] = (struct kvm_cpuid_entry2){
+			.function = 0x40000010,
+			.eax = tsc_khz < 0 ? 0 : tsc_khz,
+		};
 }
 
 void kvm_cpu__setup_cpuid(struct kvm_cpu *vcpu)
