@@ -102,7 +102,7 @@ static void e820_setup(struct kvm *kvm)
 	e820->nr_map = i;
 
 	guest_e820 = guest_flat_to_host(kvm, E820_MAP_START);
-	memcpy(e820, guest_e820, sizeof(*e820));
+	memcpy(guest_e820, e820, sizeof(*e820));
 }
 
 static void setup_vga_rom(struct kvm *kvm)
