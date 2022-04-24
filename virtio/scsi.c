@@ -208,7 +208,7 @@ static struct virtio_ops scsi_dev_virtio_ops = {
 static void virtio_scsi_vhost_init(struct kvm *kvm, struct scsi_dev *sdev)
 {
 	struct vhost_memory *mem;
-	int r, i;
+	int r;
 
 	sdev->vhost_fd = open("/dev/vhost-scsi", O_RDWR);
 	if (sdev->vhost_fd < 0)
