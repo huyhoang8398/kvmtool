@@ -6,6 +6,26 @@
 static void dummy_io(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
 		     u8 is_write, void *ptr)
 {
+	// if (addr == 0x696)
+		// static uintptr_t x = 0;
+	// {
+		// for (i = 0..len)
+		// {
+			// x = (x >> 8) | (data[i] << ((sizeof(uintptr_t) - 1) * 8));
+		// }
+	// }
+	// else if (addr == 0x697)
+	// {
+	// }
+}
+
+static void dummy_io_hello(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
+			   u8 is_write, void *ptr)
+{
+	//fprintf(stderr, "%llu\n", addr);
+	u32 value;
+	value = ioport__read32((u32 *)data);
+	fprintf(stderr, "0x%lx\n", (uintmax_t)value);
 }
 
 static void debug_io(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
@@ -17,17 +37,29 @@ static void debug_io(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
 	fprintf(stderr, "debug port %s from VCPU%lu: port=0x%lx, size=%u",
 		is_write ? "write" : "read", vcpu->cpu_id,
 		(unsigned long)addr, len);
-	if (is_write) {
+	if (is_write)
+	{
 		u32 value;
 
-		switch (len) {
-		case 1: value = ioport__read8(data); break;
-		case 2: value = ioport__read16((u16*)data); break;
-		case 4: value = ioport__read32((u32*)data); break;
-		default: value = 0; break;
+		switch (len)
+		{
+		case 1:
+			value = ioport__read8(data);
+			break;
+		case 2:
+			value = ioport__read16((u16 *)data);
+			break;
+		case 4:
+			value = ioport__read32((u32 *)data);
+			break;
+		default:
+			value = 0;
+			break;
 		}
 		fprintf(stderr, ", data: 0x%x\n", value);
-	} else {
+	}
+	else
+	{
 		fprintf(stderr, "\n");
 	}
 }
@@ -151,6 +183,10 @@ static int ioport__setup_arch(struct kvm *kvm)
 
 	/* 0510 - QEMU BIOS configuration register */
 	r = kvm__register_pio(kvm, 0x0510, 2, dummy_io, NULL);
+	if (r < 0)
+		return r;
+
+	r = kvm__register_pio(kvm, 0x0696, 8, dummy_io_hello, NULL);
 	if (r < 0)
 		return r;
 
