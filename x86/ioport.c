@@ -2,17 +2,18 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include "vptrans.h"
 
 static void dummy_io(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
 		     u8 is_write, void *ptr)
 {
 	// if (addr == 0x696)
-		// static uintptr_t x = 0;
+	// static uintptr_t x = 0;
 	// {
-		// for (i = 0..len)
-		// {
-			// x = (x >> 8) | (data[i] << ((sizeof(uintptr_t) - 1) * 8));
-		// }
+	// for (i = 0..len)
+	// {
+	// x = (x >> 8) | (data[i] << ((sizeof(uintptr_t) - 1) * 8));
+	// }
 	// }
 	// else if (addr == 0x697)
 	// {
@@ -22,10 +23,38 @@ static void dummy_io(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
 static void dummy_io_hello(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
 			   u8 is_write, void *ptr)
 {
-	//fprintf(stderr, "%llu\n", addr);
-	u32 value;
-	value = ioport__read32((u32 *)data);
-	fprintf(stderr, "0x%lx\n", (uintmax_t)value);
+
+	static u64 value[16] = {0};
+	static int pos = 0;
+	struct vptrans_pin pin;
+	if (addr == 1686)
+	{
+		// very weird FIX ME
+		pos = 0;
+	}
+	value[pos] = ioport__read16((u16 *)data);
+	pos++;
+
+	if (addr == 1701)
+	{
+		pin.vaddr = 0;
+		pin.nr_page = 0;
+		pin.off = 0;
+		for (int i = 0; i < 8; i++)
+		{
+			pin.vaddr = value[i] << (i * 8) | pin.vaddr;
+		}
+		
+		for (int i = 8; i < 12; i++) {
+			pin.off = value[i] << ((i-8)*8) | pin.off;
+		}
+		
+		for (int i = 12; i < 16; i++) {
+			pin.nr_page = value[i] << ((i-12)*8) | pin.nr_page;
+		}
+
+		fprintf(stderr, "%lx %llu %llu\n", (uintmax_t)pin.vaddr, pin.nr_page, pin.off);
+	}
 }
 
 static void debug_io(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
@@ -105,7 +134,6 @@ void ioport__map_irq(u8 *irq)
 static int ioport__setup_arch(struct kvm *kvm)
 {
 	int r;
-
 	/* Legacy ioport setup */
 
 	/* 0000 - 001F - DMA1 controller */
@@ -186,7 +214,7 @@ static int ioport__setup_arch(struct kvm *kvm)
 	if (r < 0)
 		return r;
 
-	r = kvm__register_pio(kvm, 0x0696, 8, dummy_io_hello, NULL);
+	r = kvm__register_pio(kvm, 0x0696, 16, dummy_io_hello, NULL);
 	if (r < 0)
 		return r;
 
