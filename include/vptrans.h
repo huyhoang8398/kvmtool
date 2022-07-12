@@ -2,10 +2,13 @@
 #define VPTRANS_H
 
 #include <linux/types.h>
+#include <linux/ioctl.h>
+
+#define VPTRANS_IOCTL_NR 0xf1
 
 struct vptrans_pin {
 	u64 vaddr;
-	u64 kvm_addr;
+	void *kvm_addr;
 	u64 off;
 	u64 nr_page;
 };
