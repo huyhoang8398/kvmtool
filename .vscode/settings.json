@@ -8,6 +8,10 @@
     "editor.tabSize": 8,
     "editor.insertSpaces": false,
     "files.associations": {
-        "vptrans.h": "c"
+        "*.pl": "prolog",
+        "vptrans.h": "c",
+        "ioctl.h": "c",
+        "stdio.h": "c",
+        "types.h": "c"
     }
 }

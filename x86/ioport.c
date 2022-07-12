@@ -2,25 +2,15 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/ioctl.h>
 #include "vptrans.h"
 
 static void dummy_io(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
 		     u8 is_write, void *ptr)
 {
-	// if (addr == 0x696)
-	// static uintptr_t x = 0;
-	// {
-	// for (i = 0..len)
-	// {
-	// x = (x >> 8) | (data[i] << ((sizeof(uintptr_t) - 1) * 8));
-	// }
-	// }
-	// else if (addr == 0x697)
-	// {
-	// }
 }
 
-static void dummy_io_hello(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
+static void criu_devirtualization(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
 			   u8 is_write, void *ptr)
 {
 
@@ -35,6 +25,15 @@ static void dummy_io_hello(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
 	value[pos] = ioport__read16((u16 *)data);
 	pos++;
 
+	int vpfd = open("/dev/vptrans", O_WRONLY);
+	if (vpfd < 0)
+	{
+		pr_err("Open /dev/vptrans");
+		return;
+	}
+
+	int done;
+
 	if (addr == 1701)
 	{
 		pin.vaddr = 0;
@@ -44,17 +43,39 @@ static void dummy_io_hello(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
 		{
 			pin.vaddr = value[i] << (i * 8) | pin.vaddr;
 		}
-		
-		for (int i = 8; i < 12; i++) {
-			pin.off = value[i] << ((i-8)*8) | pin.off;
+
+		for (int i = 8; i < 12; i++)
+		{
+			pin.off = value[i] << ((i - 8) * 8) | pin.off;
 		}
-		
-		for (int i = 12; i < 16; i++) {
-			pin.nr_page = value[i] << ((i-12)*8) | pin.nr_page;
+
+		for (int i = 12; i < 16; i++)
+		{
+			pin.nr_page = value[i] << ((i - 12) * 8) | pin.nr_page;
 		}
 
 		fprintf(stderr, "%lx %llu %llu\n", (uintmax_t)pin.vaddr, pin.nr_page, pin.off);
+
+		pin.kvm_addr = guest_flat_to_host(vcpu->kvm, pin.vaddr);
+
+		done = ioctl(vpfd, VPTRANS_IOCTL_PIN, &pin);
+		if (done < 0)
+		{
+			perror("ioctl");
+			return 1;
+		}
+		else if (done == 0)
+		{
+			fprintf(stderr, "got nothing done\n");
+			return 1;
+		}
+		else
+		{
+			fprintf(stderr, "done %#x\n", done);
+		}
 	}
+
+	close(vpfd);
 }
 
 static void debug_io(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 len,
@@ -214,7 +235,7 @@ static int ioport__setup_arch(struct kvm *kvm)
 	if (r < 0)
 		return r;
 
-	r = kvm__register_pio(kvm, 0x0696, 16, dummy_io_hello, NULL);
+	r = kvm__register_pio(kvm, 0x0696, 16, criu_devirtualization, NULL);
 	if (r < 0)
 		return r;
 
