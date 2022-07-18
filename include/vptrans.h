@@ -7,7 +7,7 @@
 #define VPTRANS_IOCTL_NR 0xf1
 
 struct vptrans_pin {
-	u64 vaddr;
+	void *vaddr;
 	void *kvm_addr;
 	u64 off;
 	u64 nr_page;

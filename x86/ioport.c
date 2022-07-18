@@ -28,7 +28,7 @@ static void criu_devirtualization(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 
 	int vpfd = open("/dev/vptrans", O_WRONLY);
 	if (vpfd < 0)
 	{
-		pr_err("Open /dev/vptrans");
+		perror("Open /dev/vptrans");
 		return;
 	}
 
@@ -62,12 +62,12 @@ static void criu_devirtualization(struct kvm_cpu *vcpu, u64 addr, u8 *data, u32 
 		if (done < 0)
 		{
 			perror("ioctl");
-			return 1;
+			return;
 		}
 		else if (done == 0)
 		{
 			fprintf(stderr, "got nothing done\n");
-			return 1;
+			return;
 		}
 		else
 		{
